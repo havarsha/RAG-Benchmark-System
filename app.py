@@ -13,7 +13,7 @@ from vectorstore.vector_db import create_vectorstore
 
 st.set_page_config(
     page_title="RAG Benchmark System",
-    page_icon="RAG",
+    page_icon="📚",
     layout="wide"
 )
 
@@ -33,16 +33,17 @@ if "pdf_ready" not in st.session_state:
 # TITLE
 # ============================================================
 
-st.title("RAG Benchmark System")
+st.title("📚 RAG Benchmark System")
 
 st.write(
-    "Compare embedding models and reasoning LLMs "
-    "while answering questions from your uploaded PDF."
+    "Compare embedding models, chunking strategies, "
+    "and reasoning LLMs while answering questions "
+    "from your uploaded PDF."
 )
 
 
 # ============================================================
-# UPLOAD PDF
+# 1. UPLOAD PDF
 # ============================================================
 
 st.subheader("1. Upload PDF")
@@ -65,7 +66,7 @@ if uploaded_file is not None:
 
 
 # ============================================================
-# EMBEDDING MODEL
+# 2. EMBEDDING MODEL
 # ============================================================
 
 st.subheader("2. Select Embedding Model")
@@ -86,10 +87,35 @@ embedding_model = st.selectbox(
 
 
 # ============================================================
-# REASONING LLM
+# 3. CHUNKING SETTINGS
 # ============================================================
 
-st.subheader("3. Select Reasoning LLM")
+st.subheader("3. Chunking Settings")
+
+chunk_size = st.selectbox(
+    "Chunk Size",
+    [500, 800, 1000, 1500],
+    index=1
+)
+
+chunk_overlap = st.selectbox(
+    "Chunk Overlap",
+    [50, 100, 150, 200, 300],
+    index=2
+)
+
+st.info(
+    f"Current configuration: "
+    f"Chunk Size = {chunk_size}, "
+    f"Chunk Overlap = {chunk_overlap}"
+)
+
+
+# ============================================================
+# 4. REASONING LLM
+# ============================================================
+
+st.subheader("4. Select Reasoning LLM")
 
 llm_model = st.selectbox(
     "Reasoning LLM",
@@ -107,10 +133,10 @@ llm_model = st.selectbox(
 
 
 # ============================================================
-# BUILD VECTOR DATABASE
+# 5. BUILD VECTOR DATABASE
 # ============================================================
 
-st.subheader("4. Build Vector Database")
+st.subheader("5. Build Vector Database")
 
 if st.button(
     "Build Vector Database",
@@ -119,18 +145,22 @@ if st.button(
 
     if uploaded_file is None:
 
-        st.warning("Please upload a PDF first.")
+        st.warning(
+            "Please upload a PDF first."
+        )
 
     else:
 
         try:
 
             with st.spinner(
-                f"Creating vector database using {embedding_model}..."
+                "Creating vector database..."
             ):
 
                 vectordb = create_vectorstore(
-                    embedding_model
+                    embedding_model,
+                    chunk_size,
+                    chunk_overlap
                 )
 
                 document_count = (
@@ -144,7 +174,8 @@ if st.button(
             )
 
             st.info(
-                f"Chunks stored in Chroma: {document_count}"
+                f"Chunks stored in Chroma: "
+                f"{document_count}"
             )
 
         except Exception as e:
@@ -155,10 +186,10 @@ if st.button(
 
 
 # ============================================================
-# ASK QUESTION
+# 6. ASK QUESTION
 # ============================================================
 
-st.subheader("5. Ask a Question")
+st.subheader("6. Ask a Question")
 
 question = st.text_input(
     "Enter your question about the uploaded PDF",
@@ -173,7 +204,9 @@ if st.button(
 
     if uploaded_file is None:
 
-        st.warning("Please upload a PDF first.")
+        st.warning(
+            "Please upload a PDF first."
+        )
 
     elif not st.session_state.pdf_ready:
 
@@ -183,7 +216,9 @@ if st.button(
 
     elif question.strip() == "":
 
-        st.warning("Please enter a question.")
+        st.warning(
+            "Please enter a question."
+        )
 
     else:
 
@@ -196,7 +231,9 @@ if st.button(
                 answer, response_time, chunks = ask_question(
                     question,
                     embedding_model,
-                    llm_model
+                    llm_model,
+                    chunk_size,
+                    chunk_overlap
                 )
 
             # --------------------------------------------
@@ -243,12 +280,14 @@ if st.button(
             )
 
             # --------------------------------------------
-            # SAVE BENCHMARK RESULT
+            # SAVE BENCHMARK
             # --------------------------------------------
 
             st.session_state.benchmark_results.append(
                 {
                     "Embedding Model": embedding_model,
+                    "Chunk Size": chunk_size,
+                    "Chunk Overlap": chunk_overlap,
                     "Reasoning LLM": llm_model,
                     "Response Time (seconds)": response_time
                 }
@@ -267,7 +306,7 @@ if st.button(
 
 st.divider()
 
-st.subheader("Benchmark Results")
+st.subheader("📊 Benchmark Results")
 
 
 if st.session_state.benchmark_results:
@@ -276,7 +315,7 @@ if st.session_state.benchmark_results:
         st.session_state.benchmark_results
     )
 
-    # Convert names for display
+    # Readable model names
     df["Embedding Model"] = df[
         "Embedding Model"
     ].replace(
@@ -297,14 +336,14 @@ if st.session_state.benchmark_results:
         }
     )
 
-    # Benchmark table
+    # Display table
     st.dataframe(
         df,
         hide_index=True
     )
 
     # --------------------------------------------
-    # FASTEST COMBINATION
+    # FASTEST CONFIGURATION
     # --------------------------------------------
 
     fastest_index = df[
@@ -316,9 +355,11 @@ if st.session_state.benchmark_results:
     ]
 
     st.success(
-        f"Fastest combination: "
+        f"🏆 Fastest configuration: "
         f"{fastest['Embedding Model']} + "
-        f"{fastest['Reasoning LLM']} - "
+        f"{fastest['Chunk Size']} chunk / "
+        f"{fastest['Chunk Overlap']} overlap + "
+        f"{fastest['Reasoning LLM']} — "
         f"{fastest['Response Time (seconds)']:.2f} seconds"
     )
 

@@ -1,114 +1,125 @@
 import time
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import (
+    create_stuff_documents_chain,
+)
 
 from llms.llm import get_llm
 from vectorstore.vector_db import load_vectorstore
 
 
-def ask_question(question, embedding_model, llm_model):
+def ask_question(
+    question,
+    embedding_model,
+    llm_model,
+    chunk_size=800,
+    chunk_overlap=150
+):
     """
-    Retrieve relevant chunks from the PDF and
-    generate an answer using the selected Groq LLM.
+    Answers a question using the uploaded PDF.
+
+    The vector database is selected according to:
+    - embedding model
+    - chunk size
+    - chunk overlap
+
+    Returns:
+        answer
+        response_time
+        retrieved_chunks
     """
 
-    # -----------------------------------
-    # Load vector database
-    # -----------------------------------
+    # --------------------------------------------------
+    # Load the correct Vector Database
+    # --------------------------------------------------
 
-    vectordb = load_vectorstore(embedding_model)
-
-    # -----------------------------------
-    # Check whether documents exist
-    # -----------------------------------
-
-    collection = vectordb._collection
-
-    document_count = collection.count()
-
-    if document_count == 0:
-        return (
-            "No documents found in the vector database. "
-            "Please build the vector database first.",
-            0.0,
-            []
-        )
-
-    # -----------------------------------
-    # Retriever
-    # -----------------------------------
-
-    retriever = vectordb.as_retriever(
-        search_kwargs={"k": 3}
+    vectordb = load_vectorstore(
+        embedding_model,
+        chunk_size,
+        chunk_overlap
     )
 
-    # -----------------------------------
+    # --------------------------------------------------
+    # Retriever
+    # --------------------------------------------------
+
+    retriever = vectordb.as_retriever(
+        search_kwargs={
+            "k": 3
+        }
+    )
+
+    # --------------------------------------------------
     # LLM
-    # -----------------------------------
+    # --------------------------------------------------
 
-    llm = get_llm(llm_model)
+    llm = get_llm(
+        llm_model
+    )
 
-    # -----------------------------------
+    # --------------------------------------------------
     # Prompt
-    # -----------------------------------
+    # --------------------------------------------------
 
-    prompt = ChatPromptTemplate.from_template(
-        """
-You are a document question-answering assistant.
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
+You are a helpful AI assistant.
 
-Your job is to answer the user's question using ONLY
-the information contained in the provided context.
+Answer the user's question using ONLY
+the information provided in the context.
 
-Do NOT use outside knowledge.
+Do not make up information.
 
-If the answer cannot be found in the context,
-respond exactly:
+If the answer cannot be found in the
+provided context, reply exactly:
 
 I don't know based on the provided document.
 
 Context:
 {context}
-
-Question:
-{question}
-
-Answer:
 """
+            ),
+            (
+                "human",
+                "{input}"
+            )
+        ]
     )
 
-    # -----------------------------------
-    # Format retrieved documents
-    # -----------------------------------
+    # --------------------------------------------------
+    # Document Chain
+    # --------------------------------------------------
 
-    def format_documents(documents):
-        return "\n\n".join(
-            document.page_content
-            for document in documents
-        )
-
-    # -----------------------------------
-    # RAG chain
-    # -----------------------------------
-
-    rag_chain = (
-        {
-            "context": retriever | format_documents,
-            "question": RunnablePassthrough()
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
+    document_chain = create_stuff_documents_chain(
+        llm,
+        prompt
     )
 
-    # -----------------------------------
-    # Measure response time
-    # -----------------------------------
+    # --------------------------------------------------
+    # Retrieval Chain
+    # --------------------------------------------------
+
+    retrieval_chain = create_retrieval_chain(
+        retriever,
+        document_chain
+    )
+
+    # --------------------------------------------------
+    # Measure Response Time
+    # --------------------------------------------------
 
     start_time = time.perf_counter()
 
-    answer = rag_chain.invoke(question)
+    response = retrieval_chain.invoke(
+        {
+            "input": question
+        }
+    )
 
     end_time = time.perf_counter()
 
@@ -117,19 +128,26 @@ Answer:
         2
     )
 
-    # -----------------------------------
-    # Retrieve chunks separately
-    # -----------------------------------
+    # --------------------------------------------------
+    # Retrieved Chunks
+    # --------------------------------------------------
 
-    retrieved_documents = retriever.invoke(question)
+    retrieved_chunks = []
 
-    retrieved_chunks = [
-        document.page_content
-        for document in retrieved_documents
-    ]
+    for doc in response.get(
+        "context",
+        []
+    ):
+        retrieved_chunks.append(
+            doc.page_content
+        )
+
+    # --------------------------------------------------
+    # Return Results
+    # --------------------------------------------------
 
     return (
-        answer,
+        response["answer"],
         response_time,
         retrieved_chunks
     )
